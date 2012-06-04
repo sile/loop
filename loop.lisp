@@ -25,9 +25,9 @@
   (declare (fixnum start end)
            (positive-fixnum by))
   (if (< start end)
-      (loop FOR i FROM start TO end BY by 
+      (loop FOR i fixnum FROM start TO end BY by 
             DO (yield i))
-    (loop FOR i FROM start DOWNTO end BY by
+    (loop FOR i fixnum FROM start DOWNTO end BY by
           DO (yield i))))
 
 
