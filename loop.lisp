@@ -18,8 +18,27 @@
               update-fn
               end-fn
               (lambda (fn cur)
-                (when (funcall filter-fn cur)
-                  (funcall apply-fn fn cur)))))))
+                (funcall apply-fn
+                         (lambda (cur)
+                           (when (funcall filter-fn cur)
+                             (funcall fn cur)))
+                         cur))))))
+
+;; TODO: 整理
+(declaim (inline map))
+(defun map (map-fn loop)
+  (declare (function map-fn loop))
+  (multiple-value-bind (start update-fn end-fn apply-fn) (funcall loop)
+    (declare (function update-fn end-fn apply-fn))
+    (lambda ()
+      (values start
+              update-fn
+              end-fn
+              (lambda (fn cur)
+                (funcall apply-fn 
+                         (lambda (cur) (funcall fn (funcall map-fn cur)))
+                         cur))
+              ))))
   
 (declaim (inline each))
 (defun each (fn loop)
@@ -37,6 +56,12 @@
             (setf acc (funcall fn acc x)))
           loop)
     acc))
+
+(declaim (inline collect))
+(defun collect (loop)
+  (nreverse (reduce (lambda (acc x) (cons x acc))
+                    '()
+                    loop)))
 
 ;;;;;;;;;;
 #+C
