@@ -17,9 +17,10 @@
            take take-while
            drop drop-while
            slice
-           map
+           map map-n map2
            flat-map
            filter
+           filter-map
 
            for-list
            for-array

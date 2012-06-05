@@ -5,85 +5,90 @@
 
 (declaim (inline range))
 (defun range (start end &key (by 1))
-  (lambda ()
-    (values start
-            (lambda (cur) (+ cur by))
-            (lambda (cur) (> cur end))
-            (lambda (fn) fn))))
+    (lambda ()
+      (let ((cur start))
+        (values (lambda () (incf cur by))
+                (lambda () (> cur end))
+                (lambda (fn) (funcall fn cur))))))
 
+(defmacro add-apply (loop apply-fn) ; => add-apply-hook
+  `(lambda ()
+     (multiple-value-bind (update-fn end-fn apply-fn) (funcall (the function ,loop))
+       (declare (function update-fn end-fn apply-fn))
+       (values update-fn
+               end-fn
+               (lambda (fn)
+                 (macrolet ((next (arg) `(funcall fn ,arg)))
+                   (funcall apply-fn ,apply-fn)))))))
+       
 (declaim (inline filter))
 (defun filter (filter-fn loop)
-  (declare (function filter-fn loop))
-  (multiple-value-bind (start update-fn end-fn apply-fn) (funcall loop)
-    (declare (function update-fn end-fn apply-fn))
-    (lambda ()
-      (values start
-              update-fn
-              end-fn
-              (lambda (fn)
-                (funcall apply-fn (lambda (cur) 
-                                    (when (funcall filter-fn cur)
-                                      (funcall fn cur)))))
-              ))))
+  (declare (function filter-fn))
+  (add-apply loop (lambda (cur)
+                    (when (funcall filter-fn cur)
+                      (next cur)))))
 
 (declaim (inline map))
 (defun map (map-fn loop)
-  (declare (function map-fn loop))
-  (multiple-value-bind (start update-fn end-fn apply-fn) (funcall loop)
-    (declare (function update-fn end-fn apply-fn))
-    (lambda ()
-      (values start
-              update-fn
-              end-fn
-              (lambda (fn)
-                (funcall apply-fn (lambda (cur) (funcall fn (funcall map-fn cur)))))
-              ))))
+  (declare (function map-fn))
+  (add-apply loop (lambda (cur)
+                    (next (funcall map-fn cur)))))
 
-(declaim (inline zip))
+(declaim (inline filter-map))
+(defun filter-map (filter-map-fn loop)
+  (declare (function filter-map-fn))
+  (add-apply loop (lambda (cur)
+                    (multiple-value-bind (val ok?) (funcall filter-map-fn cur)
+                      (when ok?
+                        (next val))))))
+
+(declaim (inline zip)) ;; TODO: zip-n, map-n
 (defun zip (loop1 loop2 &aux (undef (gensym)))
   (declare (function loop1 loop2))
-  (multiple-value-bind (start1 update-fn1 end-fn1 apply-fn1) (funcall loop1)
-    (multiple-value-bind (start2 update-fn2 end-fn2 apply-fn2) (funcall loop2)
-      (let ((cur1 start1)
-            (cur2 start2)
-            (memo1 undef)
-            (memo2 undef))
-        (lambda ()
-          (values t
-                  (lambda (pair)
-                    (declare (ignore pair))
-                    (when (eq memo1 undef)
-                      (setf cur1 (funcall update-fn1 cur1)))
-                    (when (eq memo2 undef)
-                      (setf cur2 (funcall update-fn2 cur2))))
-                  (lambda (pair)
-                    (declare (ignore pair))
-                    (or (funcall end-fn1 cur1)
-                        (funcall end-fn2 cur2)))
+  (lambda ()
+    (multiple-value-bind (update-fn1 end-fn1 apply-fn1) (funcall loop1)
+      (multiple-value-bind (update-fn2 end-fn2 apply-fn2) (funcall loop2)
+        (let ((memo1 undef)
+              (memo2 undef))
+          (values (lambda ()
+                    (when (eq memo1 undef) (funcall update-fn1))
+                    (when (eq memo2 undef) (funcall update-fn2)))
+                  
+                  (lambda ()
+                    (or (funcall end-fn1)
+                        (funcall end-fn2)))
+                  
                   (lambda (fn)
-                    (lambda (pair)
-                      (declare (ignore pair))
-                      (when (eq memo1 undef)
-                        (funcall (funcall apply-fn1 (lambda (cur) (setf memo1 cur))) cur1))
-
-                      (when (eq memo2 undef)
-                        (funcall (funcall apply-fn2 (lambda (cur) (setf memo2 cur))) cur2))
-                      
-                      (when (not (or (eq memo1 undef)
-                                     (eq memo2 undef)))
-                        (funcall fn memo1 memo2)
-                        (setf memo1 undef
-                              memo2 undef))))
+                    (when (eq memo1 undef)
+                      (funcall apply-fn1 (lambda (val) (setf memo1 val))))
+                    
+                    (when (eq memo2 undef)
+                      (funcall apply-fn2 (lambda (val) (setf memo2 val))))
+                    
+                    (when (not (or (eq memo1 undef)
+                                   (eq memo2 undef)))
+                      (funcall fn memo1 memo2)
+                      (setf memo1 undef
+                            memo2 undef)))
                   ))))))
+
+(declaim (inline map2))
+(defun map2 (map-fn loop1 loop2)
+  (declare (function map-fn))
+  (add-apply (zip loop1 loop2)
+             (lambda (val1 val2)
+               (next (funcall map-fn val1 val2)))))
+
+;; TODO: map-n
   
 (declaim (inline each))
 (defun each (fn loop) 
   (declare (function loop))
-  (multiple-value-bind (start update-fn end-fn apply-fn) (funcall loop)
+  (multiple-value-bind (update-fn end-fn apply-fn) (funcall loop)
     (declare (function update-fn end-fn apply-fn))
-    (do ((cur start (funcall update-fn cur)))
-        ((funcall end-fn cur))
-      (funcall (funcall apply-fn fn) cur))))
+    (loop UNTIL (funcall end-fn)
+          DO (funcall apply-fn fn)
+             (funcall update-fn))))
 
 (declaim (inline reduce))
 (defun reduce (fn init loop)
@@ -105,278 +110,3 @@
   (nreverse (reduce (lambda (acc x) (cons x acc))
                     '()
                     loop)))
-
-;;;;;;;;;;
-#+C
-(defmacro range (start end &key (by 1) reverse)
-  (if (not reverse)
-      `(values ',start
-               '(lambda (cur) (+ cur ,by))
-               '(lambda (cur) (> cur ,end))
-               '(lambda (cur) (declare (ignore cur)) t)
-               '(lambda (cur) cur))
-    `(values ',start
-             '(lambda (cur) (- cur ,by))
-             '(lambda (cur) (< cur ,end))
-             '(lambda (cur) (declare (ignore cur)) t)
-             '(lambda (cur) cur))))
-#|
-;;;;;;;;;;;;;
-(defmacro filter (fn loop-exp)
-  (multiple-value-bind (start update-fn end-fn filter-fn map-fn) (eval loop-exp)
-    `(values ',start
-             ',update-fn
-             ',end-fn
-             '(lambda (cur)
-                (and (,filter-fn cur)
-                     (,fn cur)))
-             ',map-fn)))
-
-(defmacro map (fn loop-exp)
-  (multiple-value-bind (start update-fn end-fn filter-fn map-fn) (eval loop-exp)
-    `(values ',start
-             ',update-fn
-             ',end-fn
-             ',filter-fn
-             '(lambda (cur) (,fn (,map-fn cur))))))
-      
-                     
-;;;;;;;;;;;;;
-(defmacro each (fn loop-exp)
-  (multiple-value-bind (start update-fn end-fn filter-fn map-fn) (eval loop-exp)
-    (let ((cur (gensym)))
-      `(do ((,cur ,start (,update-fn ,cur)))
-         ((,end-fn ,cur))
-         (when (,filter-fn ,cur)
-           (,fn (,map-fn ,cur)))))))
-
-(defmacro reduce (fn init loop-exp)
-  (let ((acc (gensym))
-        (x   (gensym)))
-    `(let ((,acc ,init))
-       (each (lambda (,x)
-               (setf ,acc (,fn ,acc ,x)))
-             ,loop-exp)
-       ,acc)))
-
-(defmacro collect (loop-exp)
-  `(nreverse (reduce (lambda (acc x) (cons x acc))
-                     '()
-                     ,loop-exp)))
-|#             
-#|
-(deftype callback-function () '(function (t) (values)))
-(deftype one-arg-function () '(function (t) (values t)))
-(deftype two-arg-function () '(function (t t) (values t)))
-(deftype positive-fixnum () '(integer 1 #.most-positive-fixnum))
-(deftype non-negative-fixnum () '(integer 0 #.most-positive-fixnum))
-
-(defmacro define (name args &body body)
-  (let ((callback (gensym))
-        (loop-block (gensym)))
-    `(progn
-       (declaim (inline ,name))
-       (defun ,name ,args
-         (macrolet ((yield (x)
-                      `(funcall ,',callback ,x))
-                    (break-loop ()
-                      `(return-from ,',loop-block)))
-           (lambda (,callback)
-             (declare (callback-function ,callback))
-             (block ,loop-block
-               (locally ,@body))))))))
-
-(define range (start end &key (by 1))
-  (declare (fixnum start end)
-           (positive-fixnum by))
-  (if (< start end)
-      (loop FOR i fixnum FROM start TO end BY by 
-            DO (yield i))
-    (loop FOR i fixnum FROM start DOWNTO end BY by
-          DO (yield i))))
-
-
-(define for-list (list)
-  (dolist (x list)
-    (yield x)))
-
-(define for-array (array)
-  (loop FOR x ACROSS array
-        DO (yield x)))
-
-(define for-string (string)
-  (loop FOR x ACROSS string
-        DO (yield x)))
-
-(define for-file-line (path)
-  (with-open-file (in path)
-    (loop FOR line = (read-line in nil nil)
-          WHILE line
-          DO (yield line))))
-
-(define for-hash-table (hash-table)
-  (maphash (lambda (key value)
-             (yield (list key value)))
-           hash-table))
-
-(define for-hash-key (hash-table)
-  (maphash (lambda (key value)
-             (declare (ignore value))
-             (yield key))
-           hash-table))
-
-(define for-hash-value (hash-table)
-  (maphash (lambda (key value)
-             (declare (ignore key))
-             (yield value))
-           hash-table))
-
-(define take (n loop)
-  (declare (non-negative-fixnum n)
-           (callback-function loop))
-  (let ((i -1))
-    (each (lambda (x)
-            (when (= (incf i) n)
-              (break-loop))
-            (yield x))
-          loop)))
-
-(defun slice (start end loop)
-  (take (- end start) (drop start loop)))
-
-(define drop (n loop)
-  (declare (non-negative-fixnum n))
-  (let ((i 0))
-    (each (lambda (x)
-            (if (< i n)
-                (incf i)
-              (yield x)))
-          loop)))
-
-(define map (fn loop)
-  (declare (callback-function loop)
-           (one-arg-function fn))
-  (each (lambda (x)
-          (yield (funcall fn x)))
-        loop))
-
-(define flat-map (fn loop)
-  (declare (one-arg-function fn))
-  (each (lambda (x)
-          (dolist (y (funcall fn x))
-            (yield y)))
-        loop))
-
-(define filter (fn loop)
-  (declare (callback-function loop)
-           (one-arg-function fn))
-  (each (lambda (x)
-          (when (funcall fn x)
-            (yield x)))
-        loop))
-
-;; XXX: in-efficient
-(define zip (loop &rest loops)
-  (let ((lists (mapcar #'collect loops)))
-    (each (lambda (x)
-            (when (some #'null lists)
-              (break-loop))
-            (yield (cons x (mapcar #'car lists)))
-            (setf lists (mapcar #'cdr lists)))
-          loop)))
-
-(define zip-index (loop)
-  (let ((i -1))
-    (declare (fixnum i))
-    (each (lambda (x)
-            (yield (list (incf i) x)))
-          loop)))
-
-;; XXX: name
-;; TODO: macro
-(define nest (loop &rest loops)
-  (labels ((recur (args rest-loop)
-             (if (null rest-loop)
-                 (yield (reverse args))
-               (each (lambda (x)
-                       (recur (cons x args) (cdr rest-loop)))
-                     (car rest-loop)))))
-    (each (lambda (x)
-            (recur (list x) loops))
-          loop)))
-
-(declaim (inline each))
-(defun each (fn loop)
-  (declare (callback-function fn loop))
-  (funcall loop fn))
-
-(declaim (inline reduce))
-(defun reduce (fn init loop &aux (acc init))
-  (declare (callback-function loop)
-           (two-arg-function fn))
-  (each (lambda (x)
-          (setf acc (funcall fn acc x)))
-        loop)
-  acc)
-
-(declaim (inline collect))
-(defun collect (loop) ;; TODO: defXXX を提供して拡張可能なようにする
-  (nreverse
-   (reduce (lambda (acc x) (cons x acc)) '() loop)))
-
-(declaim (inline all? any?))
-(defun all? (fn loop)
-  (declare (one-arg-function fn))
-  (each (lambda (x)
-          (unless (funcall fn x)
-            (return-from all? nil)))
-        loop)
-  t)
-
-(defun any? (fn loop)
-  (declare (one-arg-function fn))
-  (each (lambda (x)
-          (when (funcall fn x)
-            (return-from any? t)))
-        loop)
-  nil)
-
-(declaim (inline max/min-impl max min))
-(defun max/min-impl (loop key test)
-  (declare (one-arg-function key)
-           (two-arg-function test))
-  (let ((selected-value   nil)
-        (selected-element nil))
-    (each (lambda (x)
-            (let ((value (funcall key x)))
-              (when (or (null selected-value)
-                        (funcall test value selected-value))
-                (setf selected-value value
-                      selected-element x))))
-          loop)
-    (values selected-value selected-element)))
-  
-(defun max (loop &key (key #'identity))
-  (max/min-impl loop key (lambda (x y) (> x y))))
-
-(defun min (loop &key (key #'identity))
-  (max/min-impl loop key (lambda (x y) (< x y))))
-
-(declaim (inline sum))
-(defun sum (loop &key (key #'identity))
-  (declare (one-arg-function key))
-  (reduce (lambda (total x)
-            (+ total (funcall key x)))
-          0
-          loop))
-  
-(declaim (inline count))
-(defun count (fn loop)
-  (declare (one-arg-function fn))
-  (reduce (lambda (count x)
-            (if (funcall fn x)
-                (1+ count)
-              count))
-          0
-          loop))
-|#
