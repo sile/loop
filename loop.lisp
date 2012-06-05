@@ -1,6 +1,45 @@
 (in-package :loop)
 
+(declaim (inline range))
+(defun range (start end &key (by 1))
+  (lambda ()
+    (values start
+            (lambda (cur) (+ cur by))
+            (lambda (cur) (> cur end))
+            (lambda (fn cur) (funcall fn cur)))))
+
+(declaim (inline filter))
+(defun filter (filter-fn loop)
+  (declare (function filter-fn loop))
+  (multiple-value-bind (start update-fn end-fn apply-fn) (funcall loop)
+    (declare (function update-fn end-fn apply-fn))
+    (lambda ()
+      (values start
+              update-fn
+              end-fn
+              (lambda (fn cur)
+                (when (funcall filter-fn cur)
+                  (funcall apply-fn fn cur)))))))
+  
+(declaim (inline each))
+(defun each (fn loop)
+  (declare (function loop))
+  (multiple-value-bind (start update-fn end-fn apply-fn) (funcall loop)
+    (declare (function update-fn end-fn apply-fn))
+    (do ((cur start (funcall update-fn cur)))
+        ((funcall end-fn cur))
+      (funcall apply-fn fn cur))))
+
+(declaim (inline reduce))
+(defun reduce (fn init loop)
+  (let ((acc init))
+    (each (lambda (x)
+            (setf acc (funcall fn acc x)))
+          loop)
+    acc))
+
 ;;;;;;;;;;
+#+C
 (defmacro range (start end &key (by 1) reverse)
   (if (not reverse)
       `(values ',start
@@ -13,7 +52,7 @@
              '(lambda (cur) (< cur ,end))
              '(lambda (cur) (declare (ignore cur)) t)
              '(lambda (cur) cur))))
-
+#|
 ;;;;;;;;;;;;;
 (defmacro filter (fn loop-exp)
   (multiple-value-bind (start update-fn end-fn filter-fn map-fn) (eval loop-exp)
@@ -32,12 +71,6 @@
              ',end-fn
              ',filter-fn
              '(lambda (cur) (,fn (,map-fn cur))))))
-
-#|
-(defmacro zip (loop-exp1 loop-exp2)
-  (multiple-value-bind (start1 update-fn1 end-fn1 filter-fn1 map-fn1) (eval loop-exp1)  
-    (multiple-value-bind (start2 update-fn2 end-fn2 filter-fn2 map-fn2) (eval loop-exp2)
-|#
       
                      
 ;;;;;;;;;;;;;
@@ -62,7 +95,7 @@
   `(nreverse (reduce (lambda (acc x) (cons x acc))
                      '()
                      ,loop-exp)))
-             
+|#             
 #|
 (deftype callback-function () '(function (t) (values)))
 (deftype one-arg-function () '(function (t) (values t)))
