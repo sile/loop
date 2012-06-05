@@ -71,7 +71,7 @@
                       
                       (when (not (or (eq memo1 undef)
                                      (eq memo2 undef)))
-                        (funcall fn (cons memo1 memo2))
+                        (funcall fn memo1 memo2)
                         (setf memo1 undef
                               memo2 undef))))
                   ))))))
@@ -92,6 +92,13 @@
             (setf acc (funcall fn acc x)))
           loop)
     acc))
+
+(defmacro reduce2 (args init loop &rest body)
+  `(let ((acc ,init))
+     (each (lambda ,args
+             (setf acc (locally ,@body)))
+           ,loop)
+     acc))
 
 (declaim (inline collect))
 (defun collect (loop)
