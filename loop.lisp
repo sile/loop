@@ -1,12 +1,15 @@
 (in-package :loop)
 
+;; TODO: defgenerator
+;; TODO: defmapper
+
 (declaim (inline range))
 (defun range (start end &key (by 1))
   (lambda ()
     (values start
             (lambda (cur) (+ cur by))
             (lambda (cur) (> cur end))
-            (lambda (fn cur) (funcall fn cur)))))
+            (lambda (fn) fn))))
 
 (declaim (inline filter))
 (defun filter (filter-fn loop)
@@ -17,14 +20,12 @@
       (values start
               update-fn
               end-fn
-              (lambda (fn cur)
-                (funcall apply-fn
-                         (lambda (cur)
-                           (when (funcall filter-fn cur)
-                             (funcall fn cur)))
-                         cur))))))
+              (lambda (fn)
+                (funcall apply-fn (lambda (cur) 
+                                    (when (funcall filter-fn cur)
+                                      (funcall fn cur)))))
+              ))))
 
-;; TODO: 整理
 (declaim (inline map))
 (defun map (map-fn loop)
   (declare (function map-fn loop))
@@ -34,10 +35,8 @@
       (values start
               update-fn
               end-fn
-              (lambda (fn cur)
-                (funcall apply-fn 
-                         (lambda (cur) (funcall fn (funcall map-fn cur)))
-                         cur))
+              (lambda (fn)
+                (funcall apply-fn (lambda (cur) (funcall fn (funcall map-fn cur)))))
               ))))
   
 (declaim (inline each))
@@ -47,7 +46,7 @@
     (declare (function update-fn end-fn apply-fn))
     (do ((cur start (funcall update-fn cur)))
         ((funcall end-fn cur))
-      (funcall apply-fn fn cur))))
+      (funcall (funcall apply-fn fn) cur))))
 
 (declaim (inline reduce))
 (defun reduce (fn init loop)
