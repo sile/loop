@@ -34,6 +34,10 @@
   (add-apply loop (lambda (cur)
                     (next (funcall map-fn cur)))))
 
+(defmacro map-n (arity map-fn loop &aux (args (loop REPEAT arity COLLECT (gensym))))
+  `(add-apply ,loop (lambda ,args
+                      (next (funcall ,map-fn ,@args)))))
+
 (declaim (inline filter-map))
 (defun filter-map (filter-map-fn loop)
   (declare (function filter-map-fn))
@@ -42,44 +46,40 @@
                       (when ok?
                         (next val))))))
 
-(declaim (inline zip)) ;; TODO: zip-n, map-n
-(defun zip (loop1 loop2 &aux (undef (gensym)))
-  (declare (function loop1 loop2))
-  (lambda ()
-    (multiple-value-bind (update-fn1 end-fn1 apply-fn1) (funcall loop1)
-      (multiple-value-bind (update-fn2 end-fn2 apply-fn2) (funcall loop2)
-        (let ((memo1 undef)
-              (memo2 undef))
-          (values (lambda ()
-                    (when (eq memo1 undef) (funcall update-fn1))
-                    (when (eq memo2 undef) (funcall update-fn2)))
-                  
-                  (lambda ()
-                    (or (funcall end-fn1)
-                        (funcall end-fn2)))
-                  
-                  (lambda (fn)
-                    (when (eq memo1 undef)
-                      (funcall apply-fn1 (lambda (val) (setf memo1 val))))
-                    
-                    (when (eq memo2 undef)
-                      (funcall apply-fn2 (lambda (val) (setf memo2 val))))
-                    
-                    (when (not (or (eq memo1 undef)
-                                   (eq memo2 undef)))
-                      (funcall fn memo1 memo2)
-                      (setf memo1 undef
-                            memo2 undef)))
-                  ))))))
+(defmacro zip (loop1 loop2 &rest loops)
+  (let ((undef (gensym "UNDEF"))
+        (loops (append (list loop1 loop2) loops))
+        (fn (gensym "FN")))
+    (labels ((gen-zip-body (loops vars-list)
+               (if (null loops)
+                   (gen-body2 (reverse vars-list))
+                 (let ((vars (list (gensym "MEMO") (gensym "UPDATE") (gensym "END") (gensym "APPLY"))))
+                   `(multiple-value-bind ,(cdr vars) (funcall ,(car loops))
+                      (let ((,(car vars) ,undef))
+                        ,(gen-zip-body (cdr loops) (cons vars vars-list)))))))
+             (gen-body2 (vars-list)
+               `(values (lambda ()
+                          ,@(loop FOR (memo update-fn) IN vars-list
+                                  COLLECT `(when (eq ,memo ,undef) (funcall ,update-fn))))
+                        
+                        (lambda ()
+                          (or ,@(loop FOR (_ __ end-fn) IN vars-list
+                                      COLLECT `(funcall ,end-fn))))
 
-(declaim (inline map2))
-(defun map2 (map-fn loop1 loop2)
-  (declare (function map-fn))
-  (add-apply (zip loop1 loop2)
-             (lambda (val1 val2)
-               (next (funcall map-fn val1 val2)))))
+                        (lambda (,fn)
+                          ,@(loop FOR (memo _ __ apply-fn) IN vars-list
+                                  COLLECT `(when (eq ,memo ,undef)
+                                             (funcall ,apply-fn (lambda (val) (setf ,memo val)))))
+                          (when (not (or ,@(loop FOR (memo) IN vars-list
+                                                 COLLECT `(eq ,memo ,undef))))
+                            (funcall ,fn ,@(mapcar #'car vars-list))
+                            (setf ,@(loop FOR (memo) IN vars-list
+                                          APPEND (list memo undef)))))
+                        )))
+      `(lambda (&aux (,undef (gensym)))
+         ,(gen-zip-body loops '())))))
 
-;; TODO: map-n
+
   
 (declaim (inline each))
 (defun each (fn loop) 

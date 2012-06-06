@@ -13,6 +13,7 @@
 
            zip-index
            zip
+           permutate
            nest
            take take-while
            drop drop-while
