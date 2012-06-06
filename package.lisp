@@ -1,7 +1,10 @@
-(defpackage loop
+(defpackage loop ;; TODO: => flow?
   (:use :common-lisp)
   (:shadow :common-lisp reduce map max min count)
-  (:export collect
+  (:export from down-from
+           for-list for-string for-array
+           for-hash-table
+   collect
            each
            reduce
            all?
@@ -10,6 +13,8 @@
            min
            sum
            count
+
+           from
 
            zip-index
            zip
@@ -23,11 +28,7 @@
            filter
            filter-map
 
-           for-list
-           for-array
-           for-string
            for-file-line
-           for-hash-table
            for-hash-key
            for-hash-value
            range))
