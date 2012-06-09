@@ -61,5 +61,19 @@ loop
 
 複雑なzipの例:
 
-    > (let ((a (loop:map (lambda (x) (* x x x)) (loop:from 1 :by 7)))
-            (b (loop:filter (
+    > (let ((as (loop:map (lambda (x) (* x x x)) (loop:down-from 100000 :by 7)))
+            (bs (loop:filter #'oddp (loop:repeat (lambda () (random 100000)))))
+            (cs (loop:drop-while (lambda (x) (< x 100))
+                  (loop:map #'sqrt (loop:from 1)))))
+        (loop:collect
+          (loop:take 10
+            (loop:map-n 3 #'list
+              (loop:filter-n 3 (lambda (a b c)
+                                 (declare (ignore b c))
+                                 (evenp a))
+                               (loop:zip as bs cs))))))
+    => ((1000000000000000 1971 100.0) (999580058797256 21931 100.01)
+        (999160235178048 68251 100.02) (998740529125912 17779 100.03)
+        (998320940624384 89861 100.03999) (997901469657000 5897 100.04999)
+        (997482116207296 5569 100.05998) (997062880258808 10653 100.06998)
+        (996643761795072 56669 100.07997) (996224760799624 96629 100.08996))
