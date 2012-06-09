@@ -8,4 +8,6 @@
 
   :serial t
   :components ((:file "package")
-               (:file "loop")))
+               (:file "generator")
+               (:file "joint")
+               (:file "terminal")))

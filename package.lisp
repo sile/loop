@@ -1,37 +1,30 @@
 (defpackage loop ;; TODO: => flow?
   (:use :common-lisp)
-  (:shadow :common-lisp reduce map max min count)
-  (:export from down-from
-           for-list for-string for-array
-           for-hash-table
-   collect
+  (:shadow :common-lisp reduce map max min count find)
+  (:export make-generator
+           def-generator
+           from down-from
+           for-list 
+           for-string
+           for-array
+
+           make-joint
+           map map-n
+           filter filter-n
+           take take-n
+           take-while take-while-n
+           drop drop-n
+           drop-while drop-while-n
+           zip
+           
            each
            reduce
-           all?
-           any?
-           max
-           min
-           sum
+           collect
+           all? any?
+           max min
+           find
            count
-
-           from
-
-           zip-index
-           zip
-           permutate
-           nest
-           take take-while
-           drop drop-while
-           slice
-           map map-n map2
-           flat-map
-           filter
-           filter-map
-
-           for-file-line
-           for-hash-key
-           for-hash-value
-           range))
+           sum))
 (in-package :loop)
 
   
