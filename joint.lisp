@@ -104,6 +104,7 @@
 (declaim (inline drop-while))
 (defun drop-while (pred-fn generator) (drop-while-n 1 pred-fn generator))
 
+;; TODO: 整理
 (defmacro zip (loop1 loop2 &rest loops)
   (let ((undef (gensym "UNDEF"))
         (loops (append (list loop1 loop2) loops))
