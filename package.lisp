@@ -7,6 +7,7 @@
            for-list 
            for-string
            for-array
+           repeat
 
            make-joint
            map map-n

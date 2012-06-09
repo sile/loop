@@ -43,3 +43,8 @@
   :next (lambda (cur) (1+ cur))
   :end? (lambda (cur) (>= cur end))
   :key  (lambda (cur) (aref ary cur)))
+
+(def-generator repeat (fn)
+  :init (lambda () (funcall fn))
+  :next (lambda (cur) (declare (ignore cur)) (funcall fn))
+  :end? (lambda (cur) (declare (ignore cur)) nil))
